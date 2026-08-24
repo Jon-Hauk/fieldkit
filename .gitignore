@@ -1,0 +1,8 @@
+# Client findings never go in version control. A report names the machine,
+# the software it runs, its patch level and its open ports - committed and
+# pushed, that is a target package with a client's name on it.
+reports/
+
+# Safety net for a run with -ReportPath pointed here by accident. There is no
+# legitimate .html in this folder, so this can be blanket.
+*.html

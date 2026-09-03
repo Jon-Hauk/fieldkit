@@ -148,3 +148,13 @@ Two things worth doing every time:
 `reports\` is gitignored. Client findings should not end up in version
 control - name the machine, the software it runs and the holes in it, and you
 have written a target package.
+
+## License
+
+Apache-2.0. See [LICENSE](LICENSE).
+
+Chosen over MIT for the explicit patent grant, which is what makes this
+adoptable inside a company rather than only readable. Note what the licence
+does and does not do: it disclaims warranty on the code, and it is not a
+substitute for an engagement agreement when you run this on someone else's
+network. See "Before you run this on someone else's network" above.

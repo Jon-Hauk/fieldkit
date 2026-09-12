@@ -1,14 +1,25 @@
 # fieldkit
 
-**Read-only Windows diagnostics for client engagements.** Run one command on an
+[VERIFIED] Read-only Windows and Linux diagnostics for client engagements
+(Linux validation command and date below). Run one command on an
 unfamiliar machine, hand the client one report.
 
-42 checks across system inventory, network fault isolation, and a security
-baseline. Windows PowerShell 5.1, no dependencies, nothing installed on the
-target machine and nothing on it modified.
+Windows: 42 checks across system inventory, network fault isolation and a
+security baseline, in Windows PowerShell 5.1 with no dependencies. Linux: the
+same contract in standard-library Python 3.8+. Nothing is installed on the
+target machine and nothing on it is modified.
 
 Built for freelance and MSP work: arrive, establish ground truth, leave a
 document that justifies the invoice.
+
+[VERIFIED] The [Linux implementation](linux/README.md) provides a standard-library
+Python runner, private HTML/Markdown reports and 19 findings covering all 15
+numbered areas of the Linux brief. Validation:
+`python3 -B -m unittest discover -s linux/tests -q`, 2026-09-11
+(146 tests, CI on ubuntu-latest); root and non-root host evidence is linked
+from the Linux README.
+[UNVERIFIED] Other distributions and Python 3.8 runtime execution are untested.
+Each finding states its visibility and interpretation limits.
 
 ## Quick start
 
@@ -55,7 +66,17 @@ what actually changed since last time.
 | `checks\Get-SystemSnapshot.ps1` | What is this machine, how long has it been up, is the disk dying |
 | `checks\Test-NetworkHealth.ps1` | Which hop is broken - adapter, DHCP, gateway, DNS, or upstream |
 | `checks\Test-SecurityBaseline.ps1` | Twenty findings that actually come up on SMB endpoints |
+| `checks\Test-EndpointManagement.ps1` | Who manages this device, what is hardened, can data walk out, who can sign in |
 | `Invoke-FieldKit.ps1` | All of the above, one report |
+
+`Test-EndpointManagement.ps1` is deliberately vendor-neutral: it reads the
+state that Intune, ManageEngine Endpoint Central, a GPO or a JumpCloud policy
+would all be setting, rather than looking for one console's agent. That makes
+the finding true whichever tool the client bought, and it makes the report
+usable during a migration between two of them - which is when someone actually
+pays for a baseline. One control breaks the rule and matches agent names on
+purpose, because "which console owns this box" is a question the generic state
+cannot answer.
 
 Each check also runs standalone and writes its own report:
 

@@ -143,7 +143,14 @@ function Write-FieldKitSummary {
     Write-Host ""
     Write-Host ("{0} checks: {1} pass, {2} fail, {3} warn, {4} unknown, {5} informational" -f `
         $s.Total, $s.Pass, $s.Fail, $s.Warn, $s.Unkn, $s.Info) -ForegroundColor Cyan
-    if ($s.Unkn -gt 0) {
+    # Only when privilege was actually the obstacle. An UNKN meaning "nothing
+    # to evaluate" is not a reason to send the operator back for an elevated
+    # shell, and a summary that misdirects once gets read less carefully every
+    # time after that.
+    $blocked = @($script:Findings | Where-Object {
+        $_.Status -eq 'UNKN' -and $_.Detail -match 'needs admin'
+    })
+    if ($blocked.Count -gt 0) {
         Write-Host "Some controls could not be read. Re-run elevated for a complete picture." -ForegroundColor DarkYellow
     }
     return $s

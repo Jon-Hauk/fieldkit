@@ -1,0 +1,179 @@
+# CI for the public Jon-Hauk/fieldkit repo.
+#
+# Generated from the monorepo by scripts/publish_fieldkit.py - edit it there,
+# not in the published clone, or the next publish overwrites your change.
+#
+# The private monorepo gates this code already. This exists because a reviewer
+# reading the public repo cannot see that, and an ungated public repo is the
+# evidence they actually have. It also covers something the monorepo does not:
+# PSScriptAnalyzer runs here on windows-latest, where the monorepo SKIPs it for
+# want of a Windows runner and leaves PowerShell linted on one machine only.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  # ---------------------------------------------------------------
+  # The Linux half. Nothing is installed: the kit's premise is that it runs on
+  # a client's server with no pip, no venv and no network install, so the
+  # linters arrive as ephemeral `uv tool run` binaries and the package itself
+  # is never installed. Tests bootstrap their own sys.path.
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+
+      - name: Ruff
+        working-directory: linux
+        run: |
+          uv tool run ruff@0.16.5 check .
+          uv tool run ruff@0.16.5 format --check .
+
+      - name: Mypy
+        working-directory: linux
+        run: uv tool run mypy@2.3.1 fieldkit_linux
+
+      - name: Unittest
+        working-directory: linux
+        run: python -m unittest discover -s tests -t tests -v
+
+      # The dependency-free premise is the product. One `import requests` makes
+      # the tool undeployable on the machines it exists to diagnose, and the
+      # import would resolve fine on a runner that happens to have it - so
+      # nothing else here would notice. Checked against the interpreter's own
+      # stdlib list rather than a hand-maintained allowlist.
+      - name: Assert the shipped tool is standard-library only
+        working-directory: linux
+        run: |
+          python - <<'PY'
+          import ast, pathlib, sys
+
+          root = pathlib.Path(".")
+          sources = sorted(root.joinpath("fieldkit_linux").rglob("*.py"))
+          sources.append(root / "fieldkit-linux")
+          if len(sources) < 15:
+              sys.exit(f"::error::source walk found only {len(sources)} files; the check is not looking where it thinks it is")
+
+          local = {"fieldkit_linux"}
+          offenders = []
+          for source in sources:
+              tree = ast.parse(source.read_text(), filename=str(source))
+              for node in ast.walk(tree):
+                  if isinstance(node, ast.Import):
+                      names = [a.name.split(".")[0] for a in node.names]
+                  elif isinstance(node, ast.ImportFrom):
+                      if node.level:
+                          continue
+                      names = [(node.module or "").split(".")[0]]
+                  else:
+                      continue
+                  for name in names:
+                      if name and name not in local and name not in sys.stdlib_module_names:
+                          offenders.append(f"{source}:{node.lineno}: {name}")
+
+          if offenders:
+              print("::error::the Linux kit must import only the standard library")
+              for offender in offenders:
+                  print(f"  {offender}")
+              sys.exit(1)
+          print(f"{len(sources)} shipped files, standard library only.")
+          PY
+
+  # ---------------------------------------------------------------
+  # The container posture checks against a real daemon. The `linux` job proves
+  # they parse and pass their fixtures; none of that opens a Docker socket.
+  # linux/tests/live/container-workload.sh stands up one deliberately
+  # misconfigured container on the runner's rootful daemon, asserts every
+  # workload check names its condition, tears it down and asserts the host
+  # returns to baseline to the digit. On 3.8 as well as 3.12, because the kit
+  # promises 3.8 and a syntax guard is not an execution.
+  containers:
+    name: containers (${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.8", "3.12"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Prove the workload checks against a live daemon
+        env:
+          PYTHON: python
+          OUT: ${{ runner.temp }}/fieldkit-live
+        run: bash linux/tests/live/container-workload.sh
+      - name: Show the three runs
+        if: always()
+        run: |
+          for run in baseline workload after; do
+            f="${{ runner.temp }}/fieldkit-live/$run.txt"
+            echo "::group::$run"; [ -f "$f" ] && cat "$f" || echo "(not produced)"; echo "::endgroup::"
+          done
+
+  # ---------------------------------------------------------------
+  # The Windows half. PSScriptAnalyzer ships with the runner image.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Import-Module PSScriptAnalyzer
+          $findings = Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error
+          if ($findings) {
+            $findings | Format-Table RuleName, ScriptName, Line, Message -AutoSize
+            exit 1
+          }
+          Write-Host "No Error-severity findings."
+
+      # A syntax error in the entry point is worse than a lint finding and
+      # PSScriptAnalyzer does not always surface one. Parsing every script
+      # costs nothing and fails loudly.
+      - name: Parse every PowerShell file
+        shell: pwsh
+        run: |
+          $errors = $null
+          Get-ChildItem -Recurse -Include *.ps1, *.psm1 | ForEach-Object {
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              $_.FullName, [ref]$null, [ref]$errors) | Out-Null
+            if ($errors) {
+              Write-Host "::error file=$($_.Name)::$($errors[0].Message)"
+              exit 1
+            }
+          }
+          Write-Host "All PowerShell files parse."
+
+  # ---------------------------------------------------------------
+  # A leaked key is the most common way a public repo becomes an incident, and
+  # this repo's whole subject is not leaving evidence lying around.
+  secrets:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

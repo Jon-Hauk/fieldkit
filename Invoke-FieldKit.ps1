@@ -80,6 +80,9 @@ $checks = @(
     @{ Name = 'System snapshot';  Script = 'checks\Get-SystemSnapshot.ps1';    Args = @{} }
     @{ Name = 'Network health';   Script = 'checks\Test-NetworkHealth.ps1';    Args = @{ NoInternet = $NoInternet } }
     @{ Name = 'Security baseline';Script = 'checks\Test-SecurityBaseline.ps1'; Args = @{} }
+    # Last, because it is the section a client argues with. By the time they
+    # reach it they have already accepted the baseline above it.
+    @{ Name = 'Endpoint management'; Script = 'checks\Test-EndpointManagement.ps1'; Args = @{} }
 )
 
 $ran = 0

@@ -17,8 +17,12 @@ in the evidence files linked below. Final operator command, 2026-09-08:
 `sudo /usr/bin/python3 -B /home/operator/fieldkit/linux/fieldkit-linux --client-name "operator root validation"`.
 See [final root evidence](evidence/network-exposure.md).
 
-[UNVERIFIED] Execution on Python 3.8, other distributions and a separate clean
-Ubuntu installation has not been tested. Findings are scoped observations;
+[VERIFIED] The container section runs on Python 3.8.18 and 3.12 against a live
+Docker daemon in CI, with a misconfigured workload and a return-to-baseline
+check, on every change (`tests/live/container-workload.sh`, 2026-09-12).
+[UNVERIFIED] The other sections have only executed on Python 3.10 and 3.12;
+other distributions and a separate clean Ubuntu installation have not been
+tested. Findings are scoped observations;
 this is not a complete security audit or proof of fleet administration.
 
 ## Run from the checkout
@@ -302,6 +306,15 @@ the evidence record. Public pushes are left to the operator.
 Compose coverage and Podman presence. Validation:
 `python3 -B -m unittest discover -s linux/tests -q`, 2026-09-08
 (146 tests). See [container evidence](evidence/container-posture.md).
+
+[VERIFIED] **Container checks never emit `FAIL`, deliberately.** A container
+with root-equivalent host access reports `WARN`, the same status as an
+unrotated log driver, and the run still exits `0`. The severity is in the
+detail text, not the status. This is an accepted gap, not an oversight:
+workload state changes during normal operation, so gating the exit code on it
+would make the code vary with no change in host posture. Reasoning and the
+conditions that would reopen it:
+[ADR-0009](../../docs/adr/0009-fail-is-narrow-and-host-scoped.md).
 
 ```bash
 python3 -B linux/fieldkit-linux --containers-only \

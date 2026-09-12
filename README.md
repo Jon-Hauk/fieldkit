@@ -18,7 +18,10 @@ numbered areas of the Linux brief. Validation:
 `python3 -B -m unittest discover -s linux/tests -q`, 2026-09-11
 (146 tests, CI on ubuntu-latest); root and non-root host evidence is linked
 from the Linux README.
-[UNVERIFIED] Other distributions and Python 3.8 runtime execution are untested.
+[VERIFIED] The container section executes on Python 3.8.18 and 3.12 against
+a live Docker daemon in CI, on every change (`linux/tests/live/`).
+[UNVERIFIED] The other sections have only run on 3.10 and 3.12; other
+distributions are untested.
 Each finding states its visibility and interpretation limits.
 
 ## Quick start
@@ -127,6 +130,12 @@ do not own is the kind of thing that is fine right up until it is not, and a
 one-line email confirming scope is enough. `Test-NetworkHealth.ps1` is the
 only script that touches the network at all, and even that is limited to the
 hosts listed above - but the authorization matters more than the packet count.
+
+That is the bar for a single machine on a LAN. **For a Microsoft 365 tenant it
+is not enough.** Use [ENGAGEMENT-PACK.md](ENGAGEMENT-PACK.md): one page, signed
+by someone who can approve on behalf of the business, stating scope, what is
+collected, the 7-day retention, and what the report is not. The M365 checks do
+not run against any tenant - a lab included - without it.
 
 ## Exit codes
 

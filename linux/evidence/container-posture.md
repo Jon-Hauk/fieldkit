@@ -21,7 +21,8 @@ python3 -B linux/fieldkit-linux --report-path /tmp/fieldkit-container-validation
 [VERIFIED] 146 tests passed, including 15 container fixture tests. Runtime
 Python 3.8 syntax is checked independently of development-test syntax; an
 existing guard previously parsed tests that already used Python 3.9 syntax.
-Actual execution on Python 3.8 remains [UNVERIFIED]. The full host runner
+Actual execution on Python 3.8 was [UNVERIFIED] until 2026-09-12; see
+"Reproduced in CI" at the end of this file. The full host runner
 emitted 31 findings, Markdown and HTML: 1 PASS, 0 FAIL, 7 WARN, 12 UNKN,
 11 INFO, with no `check errored` or `check returned nothing` findings.
 Verification: full-run command above and
@@ -193,3 +194,91 @@ uid=65534(nobody) gid=65534(nogroup) groups=65534(nogroup)
 Some controls need root to read. Re-run with sudo to read this; Fieldkit never elevates itself.
 0 PASS, 0 FAIL, 1 WARN, 10 UNKN, 1 INFO
 ```
+
+## Live misconfigured workload
+
+[VERIFIED] 2026-09-09. Until this run, the six workload checks had **never
+evaluated a running container on a real daemon** — every prior host run
+reported "No running containers to evaluate" and the workload branches were
+covered only by fixtures. This run closes that gap with a deliberately
+misconfigured container, and returns the host to its prior state afterwards.
+
+Commands, from the repository root on `example-host` (aarch64, Docker 29.8.0):
+
+```bash
+python3 -B linux/fieldkit-linux --containers-only --report-path /tmp/fieldkit-live-validation/baseline
+
+docker tag alpine:3.20 fieldkit-badpost:latest
+docker run -d --name fieldkit-badpost \
+  --privileged --pid=host --restart=always \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /etc:/hostetc:ro \
+  --user 0:0 \
+  fieldkit-badpost:latest sleep 3600
+
+python3 -B linux/fieldkit-linux --containers-only --report-path /tmp/fieldkit-live-validation/badworkload
+
+docker rm -f fieldkit-badpost
+docker rmi fieldkit-badpost:latest
+python3 -B linux/fieldkit-linux --containers-only --report-path /tmp/fieldkit-live-validation/after
+```
+
+[VERIFIED] Severity counts across the three runs, which are a negative control
+on both sides: **baseline 4 WARN / 1 UNKN / 7 INFO → workload 9 WARN / 1 UNKN /
+2 INFO → after teardown 4 WARN / 1 UNKN / 7 INFO.** The host returned exactly
+to its prior state; no check held stale results.
+
+[VERIFIED] All six previously-unexercised checks fired, each naming the
+specific condition rather than a generic warning. Container `26a26aaad614`:
+
+| Check | Baseline | With the workload |
+|---|---|---|
+| Container privilege and host namespaces | INFO, nothing to evaluate | WARN `privileged, pid=host` |
+| Container Docker socket mounts | INFO, nothing to evaluate | WARN `socket exposure` |
+| Container and image configured users | WARN, images only | WARN `container configured UID 0, image configured UID 0` |
+| Sensitive host bind mounts | INFO, nothing to evaluate | WARN `sensitive bind (ro access), sensitive bind (rw access)` |
+| Container restart persistence | INFO, nothing to evaluate | WARN `restart=always` |
+| Image reference provenance | INFO, nothing to evaluate | WARN `image reference not pinned by sha256 digest` |
+
+[VERIFIED] The floating-reference case was produced by re-tagging a local
+`alpine:3.20` as `fieldkit-badpost:latest`. Nothing was pulled; the image list
+returned to its original four entries after teardown.
+
+[UNVERIFIED] This establishes that the checks *detect* these conditions on a
+live daemon. It does not establish detection of conditions not present in this
+container: user-namespace-remapped workloads, rootless daemons, Podman
+workloads, capability-added-but-unprivileged containers, TLS-exposed daemons,
+or containers whose entrypoint changes UID at runtime. Those remain
+fixture-covered only.
+
+[UNVERIFIED] No FAIL result was produced by any run, including one with a
+privileged container holding a rootful Docker socket. Whether that is the
+intended severity ceiling is a design question, not a defect observed here —
+see the review note accompanying this change.
+
+## Reproduced in CI
+
+[VERIFIED] 2026-09-12. Everything above was done by hand, once. The live
+workload experiment is now `tests/live/container-workload.sh`, run on every
+change on a hosted `ubuntu-latest` runner (rootful Docker 28.0.4, runner user
+in the `docker` group, no userns-remap) under **Python 3.8.18 and 3.12**. It
+passes only if all six workload checks name their condition, WARN rises by
+exactly five, and the post-teardown run reproduces the baseline line for line.
+
+First run, private monorepo, both interpreters:
+
+```text
+baseline: 0 PASS, 0 FAIL, 4 WARN, 1 UNKN, 7 INFO
+workload: 0 PASS, 0 FAIL, 9 WARN, 1 UNKN, 2 INFO
+after:    0 PASS, 0 FAIL, 4 WARN, 1 UNKN, 7 INFO
+Proven: six workload checks fired on a live daemon, +5 WARN / -5 INFO, and the host returned to baseline.
+```
+
+Identical counts to the 2026-09-09 hand run on a different host, architecture
+(x86-64 vs aarch64) and Docker version. Verification: run 34687669205, jobs
+`fieldkit-containers (3.8)` and `(3.12)`; the public repository's first run
+(34687948365, jobs `containers (3.8)` and `(3.12)`) reproduced it again.
+
+[UNVERIFIED] This proves the container section on 3.8. The other sections have
+not executed on 3.8; their coverage remains the 3.12 unit tests and the 3.10
+host runs above.

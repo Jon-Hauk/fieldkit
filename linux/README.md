@@ -302,7 +302,7 @@ the evidence record. Public pushes are left to the operator.
 ## Container posture
 
 [VERIFIED] The runner adds 12 container findings covering the ten areas in the
-[container brief](../../docs/tasks/fieldkit-container-posture.md), with separate
+container brief (an internal task note, not published), with separate
 Compose coverage and Podman presence. Validation:
 `python3 -B -m unittest discover -s linux/tests -q`, 2026-09-08
 (146 tests). See [container evidence](evidence/container-posture.md).
@@ -314,7 +314,7 @@ detail text, not the status. This is an accepted gap, not an oversight:
 workload state changes during normal operation, so gating the exit code on it
 would make the code vary with no change in host posture. Reasoning and the
 conditions that would reopen it:
-[ADR-0009](../../docs/adr/0009-fail-is-narrow-and-host-scoped.md).
+[ADR-0009](https://github.com/Jon-Hauk/engineering-records/blob/main/adr/0009-fail-is-narrow-and-host-scoped.md).
 
 ```bash
 python3 -B linux/fieldkit-linux --containers-only \

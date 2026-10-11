@@ -16,6 +16,24 @@
         1  at least one FAIL
         2  the sweep itself could not complete
 
+.PARAMETER M365
+    Run the Entra assessment using reader device-code sign-in. Requires an
+    Engagement record beneath OutputRoot; the record supplies the tenant ID.
+
+.PARAMETER Engagement
+    Explicit path to the authorized fieldkit-engagement/1 JSON record.
+
+.PARAMETER OutputRoot
+    Existing local directory outside Git and cloud sync. M365 output has a
+    seven-day manifest; -Sweep removes expired raw runs beneath this root.
+
+.PARAMETER NameAccounts
+    Include account names only when the engagement also permits them.
+
+.PARAMETER Diagnose
+    Retain failed-resource exception type and HTTP status only, under the
+    raw run's seven-day manifest. Requires -M365.
+
 .PARAMETER NoInternet
     Skip the checks that send traffic off the machine. Use on air-gapped or
     sensitive sites.
@@ -45,10 +63,48 @@
 param(
     [switch]$NoInternet,
     [string]$ReportPath,
-    [string]$ClientName
+    [string]$ClientName,
+    [switch]$Sweep,
+    [string]$OutputRoot,
+    [switch]$M365,
+    [string]$Engagement,
+    [switch]$NameAccounts,
+    [switch]$Diagnose
 )
 
 $ErrorActionPreference = 'Stop'
+
+if ($M365) {
+    try {
+        if ($Sweep -or $NoInternet -or $ReportPath -or $ClientName -or -not $Engagement -or -not $OutputRoot) {
+            throw 'M365 requires Engagement and OutputRoot and cannot be combined with host or sweep options.'
+        }
+        Import-Module (Join-Path $PSScriptRoot 'modules\FieldKit.Entra.psm1')
+        $result = Invoke-EntraAssessment -Engagement $Engagement -OutputRoot $OutputRoot -NameAccounts:$NameAccounts -Diagnose:$Diagnose
+        $result.Findings | Format-Table Status, Name, Detail -Wrap
+        Write-Output ('Reports: {0}; {1}' -f $result.Report.Markdown, $result.Report.Html)
+        if (@($result.Findings | Where-Object Status -eq 'FAIL').Count) { exit 1 }
+        return
+    } catch {
+        $message = $_.Exception.Message
+        if ($message -match '^(B[1-8]\b|UNKN\b|P1 precondition)' -or
+            $message -match '^M365 assessment stopped during (engagement validation|local output and retention validation|Graph Authentication tooling check|reader device-code sign-in|reader session and authorization validation|retained report creation)\.') {
+            Write-Output $message
+        } else {
+            Write-Output 'M365 assessment stopped. Supply Engagement and OutputRoot with -M365 alone; check required tooling.'
+        }
+        exit 2
+    }
+}
+if ($Engagement -or $NameAccounts -or $Diagnose) { throw '-Engagement, -NameAccounts and -Diagnose require -M365.' }
+
+if ($Sweep) {
+    if (-not $OutputRoot) { throw '-Sweep requires an explicit -OutputRoot.' }
+    Import-Module (Join-Path $PSScriptRoot 'modules\FieldKit.M365.psm1') -Force
+    Remove-FieldKitExpiredRaw -OutputRoot $OutputRoot
+    return
+}
+if ($OutputRoot) { throw '-OutputRoot requires -M365 or -Sweep; host reports use -ReportPath.' }
 
 $module = Join-Path $PSScriptRoot 'modules\FieldKit.Common.psm1'
 if (-not (Test-Path $module)) {

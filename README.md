@@ -70,6 +70,7 @@ what actually changed since last time.
 | `checks\Test-NetworkHealth.ps1` | Which hop is broken - adapter, DHCP, gateway, DNS, or upstream |
 | `checks\Test-SecurityBaseline.ps1` | Twenty findings that actually come up on SMB endpoints |
 | `checks\Test-EndpointManagement.ps1` | Who manages this device, what is hardened, can data walk out, who can sign in |
+| `checks\Test-M365Posture.ps1` | Opt-in, signed-engagement Entra posture assessment from Windows |
 | `Invoke-FieldKit.ps1` | All of the above, one report |
 
 `Test-EndpointManagement.ps1` is deliberately vendor-neutral: it reads the
@@ -112,7 +113,7 @@ Get-ChildItem -Recurse -Include *.ps1,*.psm1 | ForEach-Object { $n=$_.FullName; 
 
 ## Traffic that leaves the machine
 
-Only `Test-NetworkHealth.ps1` sends anything, and only this:
+In the default host sweep, `Test-NetworkHealth.ps1` sends traffic to:
 
 - the host's own default gateway (ICMP)
 - `1.1.1.1` (ICMP)
@@ -123,13 +124,30 @@ Only `Test-NetworkHealth.ps1` sends anything, and only this:
 No client data is transmitted. Pass `-NoInternet` to keep the run entirely on
 the local network, which is the right call on an air-gapped or sensitive site.
 
+The separate `-M365` mode contacts Microsoft for device-code sign-in and
+read-only Graph collection. It requires a private signed engagement and local
+OutputRoot; it cannot be combined with the host sweep or `-NoInternet`.
+Use a fresh PowerShell process for each assessment. Optional `-Diagnose`
+retains only failed-resource exception types and HTTP status under the raw
+run's seven-day manifest. See [M365 usage and limits](docs/m365-posture.md).
+
+[VERIFIED: live lab run, 2026-09-20; write-up in
+[LAB-2026-09-20](https://github.com/Jon-Hauk/engineering-records/blob/main/labs/LAB-2026-09-20-entra-identity.md)]
+The reader assessment completed all seven resource reads, and the operator's
+separate direct Graph reads matched every reported count and setting. MFA
+registration is reported `UNKN` for all four enabled accounts because the
+tenant's registration report had not backfilled; that is a visibility gap, not
+evidence of missing MFA. Legacy authentication and external sharing are not
+collected. [VERIFIED: 2026-10-10] The session guard refused a later run whose
+token carried two read permissions beyond the published list, which is the
+designed behaviour.
+
 ## Before you run this on someone else's network
 
 Get the engagement in writing first. Scanning and enumeration on a network you
 do not own is the kind of thing that is fine right up until it is not, and a
-one-line email confirming scope is enough. `Test-NetworkHealth.ps1` is the
-only script that touches the network at all, and even that is limited to the
-hosts listed above - but the authorization matters more than the packet count.
+one-line email confirming scope is enough. The host network check is limited
+to the hosts listed above; the opt-in tenant assessment has its own boundary.
 
 That is the bar for a single machine on a LAN. **For a Microsoft 365 tenant it
 is not enough.** Use [ENGAGEMENT-PACK.md](ENGAGEMENT-PACK.md): one page, signed

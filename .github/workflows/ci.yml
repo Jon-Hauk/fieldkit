@@ -105,7 +105,12 @@ jobs:
   # promises 3.8 and a syntax guard is not an execution.
   containers:
     name: containers (${{ matrix.python }})
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest: since 2026-11-23 ubuntu-latest is 26.04, and
+    # setup-python has no 3.8 build for it, so the 3.8 leg failed before
+    # running anything. 24.04 still has 3.8. When GitHub retires 24.04, the
+    # 3.8 leg needs a python:3.8 container instead; dropping it would quietly
+    # stop proving the "Python 3.8+" claim.
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
